@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: autowash-hub-api
+    env: php
+    buildCommand: composer install
+    startCommand: php -S 0.0.0.0:$PORT index.php
+    envVars:
+      - key: PHP_VERSION
+        value: 8.1
+      - key: NODE_ENV
+        value: production

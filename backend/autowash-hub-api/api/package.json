@@ -1,0 +1,20 @@
+{
+  "name": "autowash-hub-api",
+  "version": "1.0.0",
+  "description": "AutoWash Hub Backend API",
+  "main": "index.php",
+  "scripts": {
+    "start": "php -S 0.0.0.0:$PORT index.php"
+  },
+  "engines": {
+    "php": "8.1.x"
+  },
+  "keywords": [
+    "php",
+    "api",
+    "autowash",
+    "backend"
+  ],
+  "author": "Mark Aducal",
+  "license": "MIT"
+}

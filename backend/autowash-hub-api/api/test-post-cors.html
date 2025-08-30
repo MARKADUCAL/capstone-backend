@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>POST CORS Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+      .result {
+        background: #f0f0f0;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+      }
+      .success {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+      }
+      .error {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>POST CORS Test</h1>
+
+    <button onclick="testPostCors()">Test POST CORS</button>
+    <button onclick="testLoginCustomer()">Test Login Customer</button>
+
+    <div id="result" class="result"></div>
+
+    <script>
+      const API_BASE = "https://autowash-hub.rf.gd/api";
+
+      function testPostCors() {
+        const resultDiv = document.getElementById("result");
+        resultDiv.textContent = "Testing POST CORS...";
+        resultDiv.className = "result";
+
+        fetch(`${API_BASE}/test_post_cors`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "https://autowash-hub.vercel.app",
+          },
+          body: JSON.stringify({ test: "data" }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            resultDiv.textContent =
+              "SUCCESS:\n" + JSON.stringify(data, null, 2);
+            resultDiv.className = "result success";
+          })
+          .catch((error) => {
+            resultDiv.textContent = "ERROR:\n" + error.message;
+            resultDiv.className = "result error";
+          });
+      }
+
+      function testLoginCustomer() {
+        const resultDiv = document.getElementById("result");
+        resultDiv.textContent = "Testing Login Customer...";
+        resultDiv.className = "result";
+
+        const testData = {
+          email: "test@example.com",
+          password: "testpassword",
+        };
+
+        fetch(`${API_BASE}/login_customer`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "https://autowash-hub.vercel.app",
+          },
+          body: JSON.stringify(testData),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            resultDiv.textContent =
+              "SUCCESS:\n" + JSON.stringify(data, null, 2);
+            resultDiv.className = "result success";
+          })
+          .catch((error) => {
+            resultDiv.textContent = "ERROR:\n" + error.message;
+            resultDiv.className = "result error";
+          });
+      }
+    </script>
+  </body>
+</html>

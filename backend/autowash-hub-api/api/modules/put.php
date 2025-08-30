@@ -7,6 +7,140 @@ class Put {
         $this->pdo = $pdo;
     }
 
+    public function update_customer_profile($data) {
+        try {
+            if (!isset($data->id) || empty($data->id)) {
+                return $this->sendPayload(null, "failed", "Customer ID is required", 400);
+            }
+
+            // Build dynamic update set
+            $fieldsMap = [
+                'first_name' => 'first_name',
+                'last_name' => 'last_name',
+                'email' => 'email',
+                'phone' => 'phone'
+            ];
+
+            $updates = [];
+            $values = [];
+
+            foreach ($fieldsMap as $inputKey => $column) {
+                if (isset($data->$inputKey)) {
+                    $updates[] = "$column = ?";
+                    $values[] = $data->$inputKey;
+                }
+            }
+
+            // Handle password change flow: require current_password and new_password, verify then update
+            $hasNewPassword = isset($data->new_password) && !empty($data->new_password);
+            $hasCurrentPassword = isset($data->current_password) && !empty($data->current_password);
+
+            if ($hasNewPassword) {
+                if (!$hasCurrentPassword) {
+                    return $this->sendPayload(null, "failed", "Current password is required to change password", 400);
+                }
+
+                // Fetch existing password hash
+                $sqlFetch = "SELECT password FROM customers WHERE id = ?";
+                $stmtFetch = $this->pdo->prepare($sqlFetch);
+                $stmtFetch->execute([$data->id]);
+                $existing = $stmtFetch->fetch(PDO::FETCH_ASSOC);
+
+                if (!$existing) {
+                    return $this->sendPayload(null, "failed", "Customer not found", 404);
+                }
+
+                $currentHash = $existing['password'] ?? '';
+                if (!password_verify($data->current_password, $currentHash)) {
+                    return $this->sendPayload(null, "failed", "Current password is incorrect", 401);
+                }
+
+                // Queue password update
+                $updates[] = "password = ?";
+                $values[] = password_hash($data->new_password, PASSWORD_BCRYPT);
+            }
+
+            if (empty($updates)) {
+                return $this->sendPayload(null, "failed", "No fields provided to update", 400);
+            }
+
+            $values[] = $data->id;
+
+            $sql = "UPDATE customers SET " . implode(", ", $updates) . " WHERE id = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($values);
+
+            if ($stmt->rowCount() > 0) {
+                // Return updated customer (without password)
+                $stmtGet = $this->pdo->prepare("SELECT id, first_name, last_name, email, phone FROM customers WHERE id = ?");
+                $stmtGet->execute([$data->id]);
+                $customer = $stmtGet->fetch(PDO::FETCH_ASSOC);
+                return $this->sendPayload(['customer' => $customer], "success", "Customer updated successfully", 200);
+            }
+
+            // Even if rowCount is 0, the record may exist but values were identical; treat as success and return current data
+            $stmtGet = $this->pdo->prepare("SELECT id, first_name, last_name, email, phone FROM customers WHERE id = ?");
+            $stmtGet->execute([$data->id]);
+            $customer = $stmtGet->fetch(PDO::FETCH_ASSOC);
+            if ($customer) {
+                return $this->sendPayload(['customer' => $customer], "success", "No changes made", 200);
+            }
+
+            return $this->sendPayload(null, "failed", "Customer not found", 404);
+        } catch (Exception $e) {
+            return $this->sendPayload(null, "failed", $e->getMessage(), 500);
+        }
+    }
+
+    public function update_employee($data) {
+        try {
+            if (!isset($data->id) || empty($data->id)) {
+                return $this->sendPayload(null, "failed", "Employee ID is required", 400);
+            }
+
+            $fieldsMap = [
+                'first_name' => 'first_name',
+                'last_name' => 'last_name',
+                'email' => 'email',
+                'phone' => 'phone',
+                'position' => 'position'
+            ];
+
+            $updates = [];
+            $values = [];
+
+            foreach ($fieldsMap as $inputKey => $column) {
+                if (isset($data->$inputKey)) {
+                    $updates[] = "$column = ?";
+                    $values[] = $data->$inputKey;
+                }
+            }
+
+            if (isset($data->password) && !empty($data->password)) {
+                $updates[] = "password = ?";
+                $values[] = password_hash($data->password, PASSWORD_DEFAULT);
+            }
+
+            if (empty($updates)) {
+                return $this->sendPayload(null, "failed", "No fields provided to update", 400);
+            }
+
+            $values[] = $data->id;
+
+            $sql = "UPDATE employees SET " . implode(", ", $updates) . " WHERE id = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($values);
+
+            if ($stmt->rowCount() > 0) {
+                return $this->sendPayload(null, "success", "Employee updated successfully", 200);
+            }
+
+            return $this->sendPayload(null, "failed", "Employee not found or no changes made", 404);
+        } catch (Exception $e) {
+            return $this->sendPayload(null, "failed", $e->getMessage(), 500);
+        }
+    }
+
     private function sendPayload($payload, $remarks, $message, $code) {
         $status = array(
             "remarks" => $remarks,
@@ -177,14 +311,40 @@ class Put {
             
             error_log("Booking exists, proceeding with update");
             
-            // Normalize status to lowercase for consistency
-            $normalizedStatus = strtolower($data->status);
+            // Normalize status to a canonical title-case used throughout the app
+            $rawStatus = isset($data->status) ? (string)$data->status : '';
+            if (trim($rawStatus) === '') {
+                // Safety: if client sent no status, default to Cancelled for this endpoint usage
+                $rawStatus = 'Cancelled';
+            }
+            $incomingStatus = strtolower(trim($rawStatus));
+            $map = [
+                'pending' => 'Pending',
+                'approved' => 'Approved',
+                'rejected' => 'Rejected',
+                'completed' => 'Completed',
+                'cancelled' => 'Cancelled',
+                'canceled' => 'Cancelled',
+                'confirm' => 'Approved',
+                'confirmed' => 'Approved'
+            ];
+            $normalizedStatus = $map[$incomingStatus] ?? 'Pending';
             error_log("Normalized status: " . $normalizedStatus);
             
-            // Simple update without transaction for now
-            $sql = "UPDATE bookings SET status = ? WHERE id = ?";
-            $stmt = $this->pdo->prepare($sql);
-            $result = $stmt->execute([$normalizedStatus, $bookingId]);
+            // If reason provided, append to notes politely; otherwise just update status
+            $hasReason = isset($data->reason) && trim((string)$data->reason) !== '';
+            if ($hasReason) {
+                $reasonText = trim((string)$data->reason);
+                // Use "Rejection reason:" for admin rejections, "Customer reason:" for customer cancellations
+                $reasonNote = $normalizedStatus === 'Rejected' ? "Rejection reason: " . $reasonText : "Customer reason: " . $reasonText;
+                $sql = "UPDATE bookings SET status = ?, notes = CONCAT(COALESCE(notes, ''), CASE WHEN COALESCE(notes, '') = '' THEN '' ELSE ' | ' END, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+                $stmt = $this->pdo->prepare($sql);
+                $result = $stmt->execute([$normalizedStatus, $reasonNote, $bookingId]);
+            } else {
+                $sql = "UPDATE bookings SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+                $stmt = $this->pdo->prepare($sql);
+                $result = $stmt->execute([$normalizedStatus, $bookingId]);
+            }
             
             if (!$result) {
                 throw new Exception("Failed to execute UPDATE query");
@@ -359,38 +519,7 @@ class Put {
         }
     }
 
-    public function update_promotion($data) {
-        try {
-            if (!isset($data->id) || empty($data->id)) {
-                return $this->sendPayload(null, "failed", "Promotion ID is required", 400);
-            }
-            
-            $sql = "UPDATE promotions 
-                    SET name = ?, description = ?, discount_percentage = ?, start_date = ?, end_date = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?";
-            
-            $stmt = $this->pdo->prepare($sql);
-            $isActive = isset($data->is_active) ? ($data->is_active ? 1 : 0) : 1;
-            
-            $stmt->execute([
-                $data->name,
-                $data->description ?? '',
-                $data->discount_percentage,
-                $data->start_date,
-                $data->end_date,
-                $isActive,
-                $data->id
-            ]);
-            
-            if ($stmt->rowCount() > 0) {
-                return $this->sendPayload(null, "success", "Promotion updated successfully", 200);
-            } else {
-                return $this->sendPayload(null, "failed", "Promotion not found or no changes made", 404);
-            }
-        } catch (Exception $e) {
-            return $this->sendPayload(null, "failed", $e->getMessage(), 500);
-        }
-    }
+
 
     public function update_service_category($data) {
         try {
@@ -453,33 +582,7 @@ class Put {
         }
     }
 
-    public function update_notification_status($data) {
-        try {
-            if (!isset($data->id) || empty($data->id)) {
-                return $this->sendPayload(null, "failed", "Notification ID is required", 400);
-            }
-            
-            $sql = "UPDATE notifications 
-                    SET is_read = ?, updated_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?";
-            
-            $stmt = $this->pdo->prepare($sql);
-            $isRead = isset($data->is_read) ? ($data->is_read ? 1 : 0) : 0;
-            
-            $stmt->execute([
-                $isRead,
-                $data->id
-            ]);
-            
-            if ($stmt->rowCount() > 0) {
-                return $this->sendPayload(null, "success", "Notification status updated successfully", 200);
-            } else {
-                return $this->sendPayload(null, "failed", "Notification not found or no changes made", 404);
-            }
-        } catch (Exception $e) {
-            return $this->sendPayload(null, "failed", $e->getMessage(), 500);
-        }
-    }
+
 
     public function update_system_setting($data) {
         try {
@@ -502,6 +605,77 @@ class Put {
             } else {
                 return $this->sendPayload(null, "failed", "System setting not found or no changes made", 404);
             }
+        } catch (Exception $e) {
+            return $this->sendPayload(null, "failed", $e->getMessage(), 500);
+        }
+    }
+
+    public function update_inventory_item($data) {
+        try {
+            if (!isset($data->id) || empty($data->id)) {
+                return $this->sendPayload(null, "failed", "Inventory ID is required", 400);
+            }
+
+            $fields = [];
+            $values = [];
+            $map = [
+                'name' => 'name',
+                'image_url' => 'image_url',
+                'stock' => 'stock',
+                'price' => 'price',
+                'category' => 'category'
+            ];
+            foreach ($map as $k => $col) {
+                if (isset($data->$k)) {
+                    $fields[] = "$col = ?";
+                    $values[] = $data->$k;
+                }
+            }
+            if (empty($fields)) {
+                return $this->sendPayload(null, "failed", "No fields provided to update", 400);
+            }
+            $values[] = $data->id;
+            $sql = "UPDATE inventory SET " . implode(", ", $fields) . " WHERE id = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($values);
+            if ($stmt->rowCount() > 0) {
+                return $this->sendPayload(null, "success", "Inventory updated", 200);
+            }
+            return $this->sendPayload(null, "failed", "Item not found or no changes", 404);
+        } catch (Exception $e) {
+            return $this->sendPayload(null, "failed", $e->getMessage(), 500);
+        }
+    }
+
+    public function update_inventory_request($data) {
+        try {
+            if (!isset($data->id) || empty($data->id)) {
+                return $this->sendPayload(null, "failed", "Request ID is required", 400);
+            }
+
+            $fields = [];
+            $values = [];
+            $map = [
+                'status' => 'status',
+                'notes' => 'notes'
+            ];
+            foreach ($map as $k => $col) {
+                if (isset($data->$k)) {
+                    $fields[] = "$col = ?";
+                    $values[] = $data->$k;
+                }
+            }
+            if (empty($fields)) {
+                return $this->sendPayload(null, "failed", "No fields provided to update", 400);
+            }
+            $values[] = $data->id;
+            $sql = "UPDATE inventory_requests SET " . implode(", ", $fields) . ", updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute($values);
+            if ($stmt->rowCount() > 0) {
+                return $this->sendPayload(null, "success", "Inventory request updated", 200);
+            }
+            return $this->sendPayload(null, "failed", "Request not found or no changes", 404);
         } catch (Exception $e) {
             return $this->sendPayload(null, "failed", $e->getMessage(), 500);
         }

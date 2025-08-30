@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CORS Test - AutoWash Hub API</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .test-section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      .result {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 10px 0;
+        white-space: pre-wrap;
+        font-family: monospace;
+      }
+      .success {
+        border-color: #28a745;
+        background-color: #d4edda;
+      }
+      .error {
+        border-color: #dc3545;
+        background-color: #f8d7da;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>CORS Test - AutoWash Hub API</h1>
+
+    <div class="test-section">
+      <h2>Test CORS Endpoint</h2>
+      <p>This will test the basic CORS functionality with a GET request.</p>
+      <button onclick="testCors()">Test CORS</button>
+      <div id="cors-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Test Login Customer Endpoint</h2>
+      <p>This will test the login_customer endpoint with a POST request.</p>
+      <button onclick="testLogin()">Test Login</button>
+      <div id="login-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Test with Different Origin</h2>
+      <p>This simulates a request from your Vercel frontend.</p>
+      <button onclick="testWithOrigin()">Test with Origin Header</button>
+      <div id="origin-result" class="result"></div>
+    </div>
+
+    <script>
+      const API_BASE = "https://autowash-hub.rf.gd/api";
+
+      function testCors() {
+        const resultDiv = document.getElementById("cors-result");
+        resultDiv.textContent = "Testing CORS...";
+        resultDiv.className = "result";
+
+        fetch(`${API_BASE}/test_cors`)
+          .then((response) => response.json())
+          .then((data) => {
+            resultDiv.textContent =
+              "SUCCESS:\n" + JSON.stringify(data, null, 2);
+            resultDiv.className = "result success";
+          })
+          .catch((error) => {
+            resultDiv.textContent = "ERROR:\n" + error.message;
+            resultDiv.className = "result error";
+          });
+      }
+
+      function testLogin() {
+        const resultDiv = document.getElementById("login-result");
+        resultDiv.textContent = "Testing Login...";
+        resultDiv.className = "result";
+
+        const testData = {
+          email: "test@example.com",
+          password: "testpassword",
+        };
+
+        fetch(`${API_BASE}/login_customer`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(testData),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            resultDiv.textContent =
+              "SUCCESS:\n" + JSON.stringify(data, null, 2);
+            resultDiv.className = "result success";
+          })
+          .catch((error) => {
+            resultDiv.textContent = "ERROR:\n" + error.message;
+            resultDiv.className = "result error";
+          });
+      }
+
+      function testWithOrigin() {
+        const resultDiv = document.getElementById("origin-result");
+        resultDiv.textContent = "Testing with Origin header...";
+        resultDiv.className = "result";
+
+        fetch(`${API_BASE}/test_cors`, {
+          headers: {
+            Origin: "https://autowash-hub.vercel.app",
+          },
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            resultDiv.textContent =
+              "SUCCESS:\n" + JSON.stringify(data, null, 2);
+            resultDiv.className = "result success";
+          })
+          .catch((error) => {
+            resultDiv.textContent = "ERROR:\n" + error.message;
+            resultDiv.className = "result error";
+          });
+      }
+    </script>
+  </body>
+</html>

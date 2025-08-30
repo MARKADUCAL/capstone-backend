@@ -3,10 +3,10 @@ date_default_timezone_set("Asia/Manila");
 
 set_time_limit(1000);
 
-define("SERVER", "localhost");
-define("DATABASE", "db_autowashhub");
-define("USER", "root");
-define("PASSWORD", "");
+define("SERVER", "sql300.infinityfree.com");
+define("DATABASE", "if0_39818525_autowashhubdb");
+define("USER", "if0_39818525");
+define("PASSWORD", "IWfutJoRHq");
 define("DRIVER", "mysql");
 
 class Connection {

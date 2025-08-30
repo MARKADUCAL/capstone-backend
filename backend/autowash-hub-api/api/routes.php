@@ -1,7 +1,6 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// Production-safe: disable verbose error output on public hosting
+// (Some free hosts flag ini_set/error_reporting as dangerous)
 
 require_once "./config/env.php";
 loadEnv(__DIR__ . '/.env');
@@ -13,11 +12,39 @@ require_once "./modules/post.php";
 require_once "./modules/put.php";
 require_once "./config/database.php";
 
-// CORS headers
-header('Access-Control-Allow-Origin: http://localhost:4200');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
+// Force CORS headers to be set for ALL requests
+// This is critical for InfinityFree hosting
+if (!headers_sent()) {
+    // Always set CORS headers regardless of origin
+    header('Access-Control-Allow-Origin: https://autowash-hub.vercel.app');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    header('Access-Control-Allow-Credentials: true');
+    header('Access-Control-Max-Age: 86400');
+    
+    // Debug logging
+    error_log("CORS Headers Set - Origin: " . (isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'none'));
+}
+
+// Handle OPTIONS preflight request FIRST - before any other processing
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    error_log("Handling OPTIONS preflight request");
+    
+    // Set CORS headers again to ensure they're applied
+    header('Access-Control-Allow-Origin: https://autowash-hub.vercel.app');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    header('Access-Control-Allow-Credentials: true');
+    header('Access-Control-Max-Age: 86400');
+    
+    // Return 200 OK for preflight
+    http_response_code(200);
+    echo json_encode(['status' => 'preflight_ok']);
+    exit();
+}
+
+// Debug logging for troubleshooting (remove in production)
+error_log("API Request - Method: " . $_SERVER['REQUEST_METHOD'] . ", URI: " . $_SERVER['REQUEST_URI'] . ", Origin: " . (isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'none'));
 
 // Get the request method and endpoint
 $method = $_SERVER['REQUEST_METHOD'];
@@ -37,14 +64,38 @@ $post = new Post($pdo);
 $get = new Get($pdo);
 $put = new Put($pdo);
 
-// Handle OPTIONS request (CORS preflight)
-if ($method === 'OPTIONS') {
-    header('HTTP/1.1 200 OK');
-    exit();
-}
+// CORS preflight already handled at the top of the file
 
 // Handle GET requests
 if ($method === 'GET') {
+    // Test endpoint for CORS debugging
+    if (strpos($request, 'test_cors') !== false) {
+        error_log("Test CORS endpoint called");
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'CORS test successful',
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => $method,
+            'request' => $request,
+            'origin' => isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'none'
+        ]);
+        exit();
+    }
+    
+    // Test POST CORS endpoint
+    if (strpos($request, 'test_post_cors') !== false) {
+        error_log("Test POST CORS endpoint called");
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'POST CORS test successful',
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => $method,
+            'request' => $request,
+            'origin' => isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'none'
+        ]);
+        exit();
+    }
+    
     if (strpos($request, 'get_customer_count') !== false) {
         $result = $get->get_customer_count();
         echo json_encode($result);
@@ -99,6 +150,19 @@ if ($method === 'GET') {
         exit();
     }
 
+    // Inventory routes
+    if (strpos($request, 'get_inventory_requests') !== false) {
+        $result = $get->get_inventory_requests();
+        echo json_encode($result);
+        exit();
+    }
+
+    if (strpos($request, 'get_inventory') !== false) {
+        $result = $get->get_inventory();
+        echo json_encode($result);
+        exit();
+    }
+
     if (strpos($request, 'get_booking_count') !== false) {
         $result = $get->get_booking_count();
         echo json_encode($result);
@@ -134,6 +198,12 @@ if ($method === 'GET') {
         exit();
     }
 
+    if (strpos($request, 'get_contact_enquiries') !== false) {
+        $result = $get->get_contact_enquiries();
+        echo json_encode($result);
+        exit();
+    }
+
     // New GET routes for updated database schema
     if (strpos($request, 'get_vehicle_types') !== false) {
         $result = $get->get_vehicle_types();
@@ -165,11 +235,7 @@ if ($method === 'GET') {
         exit();
     }
 
-    if (strpos($request, 'get_promotions') !== false) {
-        $result = $get->get_promotions();
-        echo json_encode($result);
-        exit();
-    }
+
 
     if (strpos($request, 'get_service_categories') !== false) {
         $result = $get->get_service_categories();
@@ -198,19 +264,7 @@ if ($method === 'GET') {
         exit();
     }
 
-    if (strpos($request, 'get_notifications') !== false) {
-        if (isset($_GET['user_id']) && isset($_GET['user_type'])) {
-            $userId = $_GET['user_id'];
-            $userType = $_GET['user_type'];
-            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
-            $result = $get->get_notifications($userId, $userType, $limit);
-            echo json_encode($result);
-        } else {
-            http_response_code(400);
-            echo json_encode(['message' => 'User ID and user type are required.']);
-        }
-        exit();
-    }
+
 
     if (strpos($request, 'get_booking_details') !== false) {
         if (isset($_GET['booking_id'])) {
@@ -254,13 +308,33 @@ if ($method === 'POST') {
     // Get POST data
     $data = json_decode(file_get_contents("php://input"));
     
-    if (strpos($request, 'register_customer') !== false) {
+    // Debug logging for POST requests
+    error_log("POST Request - URI: " . $request . ", Data: " . json_encode($data));
+    
+    // Test POST CORS endpoint
+    if (strpos(strtolower($request), 'test_post_cors') !== false) {
+        error_log("Test POST CORS endpoint called via POST");
+        echo json_encode([
+            'status' => 'success',
+            'message' => 'POST CORS test successful',
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => $method,
+            'request' => $request,
+            'origin' => isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'none',
+            'data_received' => $data
+        ]);
+        exit();
+    }
+    
+    if (strpos(strtolower($request), 'register_customer') !== false) {
+        error_log("Handling register_customer request");
         $result = $post->register_customer($data);
         echo json_encode($result);
         exit();
     }
     
-    if (strpos($request, 'login_customer') !== false) {
+    if (strpos(strtolower($request), 'login_customer') !== false) {
+        error_log("Handling login_customer request");
         $result = $post->login_customer($data);
         echo json_encode($result);
         exit();
@@ -321,10 +395,7 @@ if ($method === 'POST') {
         exit();
     }
 
-    if (strpos($request, 'add_promotion') !== false) {
-        $result = $post->add_promotion($data);
-        exit();
-    }
+
 
     if (strpos($request, 'add_service_category') !== false) {
         $result = $post->add_service_category($data);
@@ -344,17 +415,40 @@ if ($method === 'POST') {
         exit();
     }
 
-    if (strpos($request, 'add_notification') !== false) {
-        $result = $post->add_notification($data);
+    if (strpos($request, 'submit_contact') !== false) {
+        $result = $post->submit_contact($data);
         echo json_encode($result);
         exit();
     }
 
-    if (strpos($request, 'add_booking_promotion') !== false) {
-        $result = $post->add_booking_promotion($data);
+    if (strpos($request, 'update_contact_status') !== false) {
+        $result = $post->update_contact_status($data);
         echo json_encode($result);
         exit();
     }
+
+    // Inventory create
+    if (strpos($request, 'add_inventory_item') !== false) {
+        $result = $post->add_inventory_item($data);
+        echo json_encode($result);
+        exit();
+    }
+
+    // Inventory request
+    if (strpos($request, 'add_inventory_request') !== false) {
+        $result = $post->add_inventory_request($data);
+        echo json_encode($result);
+        exit();
+    }
+
+    // Take inventory item for employee
+    if (strpos($request, 'take_inventory_item') !== false) {
+        $result = $post->take_inventory_item($data);
+        echo json_encode($result);
+        exit();
+    }
+
+
 
     if (strpos($request, 'add_booking_history') !== false) {
         $result = $post->add_booking_history($data);
@@ -380,6 +474,12 @@ if ($method === 'PUT') {
     if (strpos($request, 'update_customer_profile') !== false) {
         // Process the update
         $result = $put->update_customer_profile($data);
+        echo json_encode($result);
+        exit();
+    }
+
+    if (strpos($request, 'update_employee') !== false) {
+        $result = $put->update_employee($data);
         echo json_encode($result);
         exit();
     }
@@ -433,11 +533,7 @@ if ($method === 'PUT') {
         exit();
     }
 
-    if (strpos($request, 'update_promotion') !== false) {
-        $result = $put->update_promotion($data);
-        echo json_encode($result);
-        exit();
-    }
+
 
     if (strpos($request, 'update_service_category') !== false) {
         $result = $put->update_service_category($data);
@@ -451,11 +547,21 @@ if ($method === 'PUT') {
         exit();
     }
 
-    if (strpos($request, 'update_notification_status') !== false) {
-        $result = $put->update_notification_status($data);
+    // Inventory update
+    if (strpos($request, 'update_inventory_item') !== false) {
+        $result = $put->update_inventory_item($data);
         echo json_encode($result);
         exit();
     }
+
+    // Inventory request update
+    if (strpos($request, 'update_inventory_request') !== false) {
+        $result = $put->update_inventory_request($data);
+        echo json_encode($result);
+        exit();
+    }
+
+
 
     if (strpos($request, 'update_system_setting') !== false) {
         $result = $put->update_system_setting($data);
@@ -482,8 +588,28 @@ if ($method === 'DELETE') {
         exit();
     }
     
+    if (strpos($request, 'employees') !== false && is_numeric($id)) {
+        $result = $post->delete_employee($id);
+        echo json_encode($result);
+        exit();
+    }
+    
     if (strpos($request, 'bookings') !== false && is_numeric($id)) {
         $result = $post->delete_booking($id);
+        echo json_encode($result);
+        exit();
+    }
+
+    // Inventory delete
+    if (strpos($request, 'inventory') !== false && is_numeric($id)) {
+        $result = $post->delete_inventory_item($id);
+        echo json_encode($result);
+        exit();
+    }
+
+    // Contact enquiry delete
+    if (strpos($request, 'delete_contact_enquiry') !== false && is_numeric($id)) {
+        $result = $post->delete_contact_enquiry($id);
         echo json_encode($result);
         exit();
     }

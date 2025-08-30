@@ -1,13 +1,40 @@
+# Force CORS headers for all requests - critical for InfinityFree
+
 <IfModule mod_headers.c>
-    Header set Access-Control-Allow-Origin "http://localhost:4200"
-    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
-    Header set Access-Control-Allow-Credentials "true"
+    # Always set CORS headers for all origins
+    Header always set Access-Control-Allow-Origin "https://autowash-hub.vercel.app"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+    Header always set Access-Control-Allow-Credentials "true"
+    Header always set Access-Control-Max-Age "86400"
+    
+    # Handle preflight OPTIONS requests
+    Header always set Access-Control-Allow-Origin "https://autowash-hub.vercel.app" env=HTTP_ORIGIN
+    
+    # Force headers to be set even if already set
+    Header merge Access-Control-Allow-Origin "https://autowash-hub.vercel.app"
 </IfModule>
+
+# Fallback CORS handling if mod_headers is not available
+
+<IfModule !mod_headers.c> # This will be handled by PHP in routes.php
+</IfModule>
+
+# URL rewriting for API endpoints
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    
+    # Handle rewritten URLs from .htaccess
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^(.*)$ routes.php?request=$1 [L,QSA]
+</IfModule>
+
+# Security headers
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
 </IfModule>
